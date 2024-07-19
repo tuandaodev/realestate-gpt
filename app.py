@@ -13,6 +13,7 @@ import sqlite3
 import sklearn
 from sklearn.metrics import mean_squared_error, r2_score 
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+from time import sleep
 
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
@@ -54,11 +55,85 @@ def generate_gpt_reponse(gpt_input, max_tokens):
     gpt_response = completion.choices[0].message['content'].strip()
     return gpt_response
 
+def find_assistant(id_or_name=None):
+    if not id_or_name:
+        return
+    assistants =  client.beta.assistants.list()
+    if not assistants:
+        return
+
+    for asst in assistants:
+        if asst.id == id_or_name:
+            return client.beta.assistants.retrieve(assistant_id=asst.id)
+        if asst.name == id_or_name:
+            return client.beta.assistants.retrieve(assistant_id=asst.id)
+    return
+
+def create_assistant(name):
+    message_file = client.files.create(
+        file=open("data/batdongsan.csv", "rb"), purpose="assistants"
+    )
+    file_id = message_file.id
+    assistant = client.beta.assistants.create(
+        name=name,
+        instructions="You are an expert real estate data analyst. Use you knowledge base to answer questions about real estate and data analyst. Do not show the steps, I just need to give me the answer for the question by reading the data in the attached CSV. The answer must be in vietnamese.",
+        tools=[{"type": "code_interpreter"}],
+        model="gpt-4o-mini",
+        tool_resources={
+            "code_interpreter": {
+                "file_ids": [file_id]
+            }
+        }
+    )
+
+def generate_assistant_response(thread, user_input):
+    message = client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=user_input,
+    )
+
+    # Run thread with the assistant and poll for the results
+    run = client.beta.threads.runs.create(
+        thread_id=thread.id,
+        assistant_id=assistant.id,
+    )
+
+    print(run.status)
+    while (run.status != "completed"):
+        sleep(1)
+        print("Waiting for the Assistant to respond...")
+        run = client.beta.threads.runs.retrieve(
+            thread_id=thread.id,
+            run_id=run.id
+        )
+        print(run.status)
+
+    messages = client.beta.threads.messages.list(
+        thread_id=thread.id
+    )
+
+    response = ''
+    for m in messages:
+        print(m)
+        print(m.content[0].text)
+        print(m.role + ": " + str(m.content[0].text.value))
+        if m.role == 'assistant':
+            response = response + '\n' + str(m.content[0].text.value)
+
+    return response.strip()
+
 lida = Manager(text_gen=llm("openai"))
 textgen_config = TextGenerationConfig(n=1, temperature=0.2, model="gpt-4o", use_cache=True)
 
 st.sidebar.title("Ứng dụng Biểu đồ Truy vấn")
-menu = st.sidebar.selectbox("Chọn một tùy chọn", ["Tóm tắt", "Hỏi đáp và tạo biểu đồ", "Hỏi đáp nhu cầu"])
+menu = st.sidebar.selectbox("Chọn một tùy chọn", ["Tóm tắt", "Hỏi đáp và tạo biểu đồ", "Hỏi đáp nhu cầu", "Hỏi đáp nhu cầu không cần data"])
+
+# Init AI Assistant
+bot_name = "Real Estate Data Analyst Assistant"
+assistant = find_assistant(bot_name)
+if assistant is None:
+    assistant = create_assistant(bot_name)
 
 if menu == "Tóm tắt":
     st.subheader("Tóm tắt dữ liệu của bạn")
@@ -148,3 +223,27 @@ elif menu == "Hỏi đáp nhu cầu":
                     st.write(f"**Bạn**: {chat['content']}")
                 elif chat["role"] == "assistant":
                     st.write(f"**Assistant**: {chat['content']}")
+
+elif menu == "Hỏi đáp nhu cầu không cần data":
+    st.subheader("Chat trực tiếp với GPT trên tệp data VN")
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    thread = client.beta.threads.create()
+    user_input = st.text_area("Nhập câu hỏi của bạn", height=100)
+    if st.button("Gửi"):
+        if user_input:
+            try:
+                st.session_state.chat_history.append({"role": "user", "content": user_input})
+                chat_response = generate_assistant_response(thread, user_input)
+                st.session_state.chat_history.append({"role": "assistant", "content": chat_response})
+            except Exception as e:
+                print(e)
+                chat_response = "Bạn có thể làm rõ yêu cầu của bạn hơn không"
+                st.session_state.chat_history.append({"role": "assistant", "content": chat_response})
+
+    if st.session_state.chat_history:
+        for chat in st.session_state.chat_history:
+            if chat["role"] == "user":
+                st.write(f"**Bạn**: {chat['content']}")
+            elif chat["role"] == "assistant":
+                st.write(f"**Assistant**: {chat['content']}")
