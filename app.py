@@ -76,7 +76,7 @@ def create_assistant(name):
     file_id = message_file.id
     assistant = client.beta.assistants.create(
         name=name,
-        instructions="You are an expert real estate data analyst. Use you knowledge base to answer questions about real estate and data analyst. Do not show the steps, I just need to give me the answer for the question by reading the data in the attached CSV. The answer must be in vietnamese.",
+        instructions="You are an expert real estate data analyst. Use you knowledge base to answer questions about real estate and data analyst. Do not show the steps, I just need to give me the answer for the question by reading the data in the attached CSV. The answer must be in vietnamese. You should remove all the data that you cannot convert to number on columns: Gia (VND),Dien tich (m2),So phong ngu,So phong ve sinh,So tang,Duong vao,Mat tien.",
         tools=[{"type": "code_interpreter"}],
         model="gpt-4o-mini",
         tool_resources={
@@ -113,15 +113,41 @@ def generate_assistant_response(thread, user_input):
         thread_id=thread.id
     )
 
-    response = ''
-    for m in messages:
-        print(m)
-        print(m.content[0].text)
-        print(m.role + ": " + str(m.content[0].text.value))
-        if m.role == 'assistant':
-            response = response + '\n' + str(m.content[0].text.value)
+    # Initialize variables for image and label
+    images_and_labels = []
 
-    return response.strip()
+    print(messages)
+
+    # Loop through each message
+    for m in messages:
+        image = None
+        label = None
+        if m.role != 'assistant':
+            continue
+        # Loop through each content block in the message
+        for content_block in m.content:
+            if content_block.type == 'image_file':
+                image = content_block.image_file.file_id
+                download_image(image)
+            elif content_block.type == 'text':
+                label = content_block.text.value
+        
+        # If both image and label are found, add them to the list
+        if image or label:
+            images_and_labels.append((image, label))
+
+    return images_and_labels
+
+def download_image(file_id):
+    if not os.path.exists('output'):
+        os.makedirs('output')
+        print("The new directory is created!")
+
+    file_data = client.files.content(file_id)
+    file_data_bytes = file_data.read()
+    output_path = f"output/{file_id}.png"
+    with open(output_path, "wb") as file:
+        file.write(file_data_bytes)
 
 lida = Manager(text_gen=llm("openai"))
 textgen_config = TextGenerationConfig(n=1, temperature=0.2, model="gpt-4o", use_cache=True)
@@ -130,10 +156,14 @@ st.sidebar.title("Ứng dụng Biểu đồ Truy vấn")
 menu = st.sidebar.selectbox("Chọn một tùy chọn", ["Tóm tắt", "Hỏi đáp và tạo biểu đồ", "Hỏi đáp nhu cầu", "Hỏi đáp nhu cầu không cần data"])
 
 # Init AI Assistant
-bot_name = "Real Estate Data Analyst Assistant"
-assistant = find_assistant(bot_name)
-if assistant is None:
-    assistant = create_assistant(bot_name)
+try:
+    bot_name = "Real Estate Data Analyst Assistant"
+    assistant = find_assistant(bot_name)
+    if assistant is None:
+        assistant = create_assistant(bot_name)
+except Exception as ea:
+    print(ea)
+    print("Khong the khoi tao AI Assistant")
 
 if menu == "Tóm tắt":
     st.subheader("Tóm tắt dữ liệu của bạn")
@@ -187,63 +217,38 @@ if menu == "Hỏi đáp và tạo biểu đồ":
                 st.write(f"Câu hỏi {i+1}: {q}")
                 st.image(img, caption=f"Biểu đồ cho câu hỏi {i+1}")
 
-
-elif menu == "Hỏi đáp nhu cầu":
-    st.subheader("Chat trực tiếp với GPT")
-
-    file_uploader = st.file_uploader("Tải lên tệp CSV của bạn", type="csv")
-    if file_uploader is not None:
-        path_to_save = "chat_data.csv"
-        with open(path_to_save, "wb") as f:
-            f.write(file_uploader.getvalue())
-        data = pd.read_csv(path_to_save)
-        st.write("Dữ liệu CSV đã tải lên:")
-        st.dataframe(data)
-
-        if 'chat_history' not in st.session_state:
-            st.session_state.chat_history = []
-
-        user_input = st.text_area("Nhập câu hỏi của bạn", height=100)
-        if st.button("Gửi"):
-            if user_input:
-                # try:
-                
-                gpt_input = f"Đọc data sau {data} và trả lời câu hỏi {user_input}"
-                
-                response = generate_gpt_reponse(gpt_input, max_tokens=1000)
-                st.session_state.chat_history.append({"role": "assistant", "content": response})
-                # except Exception:
-                    
-                #     chat_response = "Bạn có ohể làm rõ yêu cầu của bạn hơn không"
-                #     st.session_state.chat_history.append({"role": "assistant", "content": chat_response})
-
-        if st.session_state.chat_history:
-            for chat in st.session_state.chat_history:
-                if chat["role"] == "user":
-                    st.write(f"**Bạn**: {chat['content']}")
-                elif chat["role"] == "assistant":
-                    st.write(f"**Assistant**: {chat['content']}")
-
 elif menu == "Hỏi đáp nhu cầu không cần data":
     st.subheader("Chat trực tiếp với GPT trên tệp data VN")
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
+
     thread = client.beta.threads.create()
     user_input = st.text_area("Nhập câu hỏi của bạn", height=100)
     if st.button("Gửi"):
         if user_input:
             try:
                 st.session_state.chat_history.append({"role": "user", "content": user_input})
-                chat_response = generate_assistant_response(thread, user_input)
-                st.session_state.chat_history.append({"role": "assistant", "content": chat_response})
+                images_and_labels = generate_assistant_response(thread, user_input)
+                for image, label in images_and_labels:
+                    print(f"Image ID: {image}, Label: {label}")
+                    if image is not None:
+                        st.session_state.chat_history.append({"role": "assistant", "content": image, "type": "image"})
+                    if label is not None:
+                        st.session_state.chat_history.append({"role": "assistant", "content": label, "type": "text"})
+
+                # st.session_state.chat_history.append({"role": "assistant", "content": chat_response})
             except Exception as e:
                 print(e)
                 chat_response = "Bạn có thể làm rõ yêu cầu của bạn hơn không"
-                st.session_state.chat_history.append({"role": "assistant", "content": chat_response})
+                st.session_state.chat_history.append({"role": "assistant", "content": chat_response, "type": "text"})
 
     if st.session_state.chat_history:
         for chat in st.session_state.chat_history:
             if chat["role"] == "user":
                 st.write(f"**Bạn**: {chat['content']}")
             elif chat["role"] == "assistant":
-                st.write(f"**Assistant**: {chat['content']}")
+                if chat["type"] == 'image':
+                    output_path = f"output/{chat['content']}.png"
+                    st.image(output_path, caption="")
+                elif chat["type"] == 'text':
+                    st.write(f"**Assistant**: {chat['content']}")
