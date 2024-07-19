@@ -116,8 +116,6 @@ def generate_assistant_response(thread, user_input):
     # Initialize variables for image and label
     images_and_labels = []
 
-    print(messages)
-
     # Loop through each message
     for m in messages:
         image = None
@@ -153,7 +151,7 @@ lida = Manager(text_gen=llm("openai"))
 textgen_config = TextGenerationConfig(n=1, temperature=0.2, model="gpt-4o", use_cache=True)
 
 st.sidebar.title("Ứng dụng Biểu đồ Truy vấn")
-menu = st.sidebar.selectbox("Chọn một tùy chọn", ["Tóm tắt", "Hỏi đáp và tạo biểu đồ", "Hỏi đáp nhu cầu", "Hỏi đáp nhu cầu không cần data"])
+menu = st.sidebar.selectbox("Chọn một tùy chọn", ["Tóm tắt", "Hỏi đáp và tạo biểu đồ", "Hỏi đáp nhu cầu"])
 
 # Init AI Assistant
 try:
@@ -217,7 +215,7 @@ if menu == "Hỏi đáp và tạo biểu đồ":
                 st.write(f"Câu hỏi {i+1}: {q}")
                 st.image(img, caption=f"Biểu đồ cho câu hỏi {i+1}")
 
-elif menu == "Hỏi đáp nhu cầu không cần data":
+elif menu == "Hỏi đáp nhu cầu":
     st.subheader("Chat trực tiếp với GPT trên tệp data VN")
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
