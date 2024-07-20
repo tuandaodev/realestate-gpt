@@ -71,12 +71,12 @@ def find_assistant(id_or_name=None):
 
 def create_assistant(name):
     message_file = client.files.create(
-        file=open("data/batdongsan.csv", "rb"), purpose="assistants"
+        file=open("data/batdongsan_cleaned.csv", "rb"), purpose="assistants"
     )
     file_id = message_file.id
     assistant = client.beta.assistants.create(
         name=name,
-        instructions="You are an expert real estate data analyst. Use you knowledge base to answer questions about real estate and data analyst. Do not show the steps, I just need to give me the answer for the question by reading the data in the attached CSV. The answer must be in vietnamese. You should remove all the data that you cannot convert to number on columns: Gia (VND),Dien tich (m2),So phong ngu,So phong ve sinh,So tang,Duong vao,Mat tien.",
+        instructions="You are an expert real estate data analyst. Use you knowledge base to answer questions about real estate and data analyst. Do not show the steps, I just need to give me the answer for the question by reading the data in the attached CSV. The answer must be in vietnamese",
         tools=[{"type": "code_interpreter"}],
         model="gpt-4o-mini",
         tool_resources={
@@ -155,7 +155,7 @@ menu = st.sidebar.selectbox("Chọn một tùy chọn", ["Tóm tắt", "Hỏi đ
 
 # Init AI Assistant
 try:
-    bot_name = "Real Estate Data Analyst Assistant"
+    bot_name = "Real Estate Assistant"
     assistant = find_assistant(bot_name)
     if assistant is None:
         assistant = create_assistant(bot_name)
@@ -221,6 +221,7 @@ elif menu == "Hỏi đáp nhu cầu":
         st.session_state.chat_history = []
 
     thread = client.beta.threads.create()
+    print("Create new thread")
     user_input = st.text_area("Nhập câu hỏi của bạn", height=100)
     if st.button("Gửi"):
         if user_input:
