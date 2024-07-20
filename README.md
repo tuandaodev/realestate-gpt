@@ -9,3 +9,6 @@ Create an .env file in root folder, add OPENAI_API_KEY variable and value for it
 
 # Running the Application
 py -m streamlit run app.py
+
+# Tracking created AI Assistant
+https://platform.openai.com/playground/assistants
